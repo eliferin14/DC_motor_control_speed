@@ -15,7 +15,8 @@ long pulseCounter;  // Contatore degli impulsi dell'encoder
 // Velocità angolare
 float angVel_ps;    // Pulses per second
 float angVel_rads;  // Radians per second
-float angVel_rpm;   // Routes per minute
+float angVel_rpm = 0;   // Routes per minute
+float oldVel_rpm;   // Campione precedente
 
 // Variabili temporali: printf(%lu)
 unsigned long t=0, oldT;
@@ -31,10 +32,19 @@ int period = 200;   // Deve essere abbastanza grande per avere abbastanza campio
 
 // Parametri per PWM : https://randomnerdtutorials.com/esp32-pwm-arduino-ide/
 #define CHANNEL 0       // Canale per la funzione ledc
-#define FREQUENCY 5000  // Frequenza dell'onda quadra
+#define FREQUENCY 20000  // Frequenza dell'onda quadra
 #define RESOLUTION 8    // Bit di risoluzione del dutycycle => livelli = 2^RESOLUTION
-int dutyCycle;
+int dutyCycle = 0;
+int dutyCycle_print;
 const int maxDutyCycle = pow(2, RESOLUTION) -1;
+
+// Parametri del PID
+const float kp = 0.05;
+const float ki = 1;
+const float kd = 0;
+float target = 12;    // Velocità angolare da raggiungere e mantenere [rpm]
+float error = 0;
+float errorP, errorI, errorD;   // Termini per gestire le varie componenti del PID
 
 
 // Dichiarazioni
@@ -74,15 +84,34 @@ void loop() {
     t = micros();
     deltaT = float(t - oldT) / 1000000;     // In secondi
 
-    //Serial.printf("deltaT: %.5f s\t%lu us\n", deltaT, (t-oldT));
+    // Memorizzo il campione precedente della velocità
+    oldVel_rpm = angVel_rpm;
+
+    // Misuro la velocità
     getAngularVelocities(deltaT);
 
-    // Mirror
-    dutyCycle = 200 + angVel_rpm;
+    // Calcolo l'errore
+    error = target - angVel_rpm;
+
+    // Calcolo il dutyCycle usando i parametri del PID
+    // NB: Ignoro il termine integrale
+
+        // Termine proporzionale
+        errorP = error;
+
+        // Termine integrale: valore*deltaT
+        errorI += error * deltaT;
+
+        // Sommo le componenti 
+        dutyCycle = kp*errorP + ki*errorI + kd*errorD;
+
+
+    // Imposto il dutycycle
     setDutyCycle(dutyCycle);
 
     //Serial.printf("%f, %f, %f\n", angVel_ps, angVel_rads, angVel_rpm);
-    Serial.printf("%f, %d\n", angVel_rpm, dutyCycle);
+    dutyCycle_print = map(dutyCycle, -maxDutyCycle, maxDutyCycle, -target, target);
+    Serial.printf("%f, %.2f, %.2f, %d\n", target, angVel_rpm, error, dutyCycle_print);
 
     delay(period);
 }
