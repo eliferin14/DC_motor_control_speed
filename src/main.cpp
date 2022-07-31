@@ -22,14 +22,40 @@ unsigned long t=0, oldT;
 float deltaT;
 int period = 200;   // Deve essere abbastanza grande per avere abbastanza campioni
 
+// Motore con driver L298n
+#define EN 21       // Pin su cui mandare il segnale pwm
+#define IN1 23      // Pin per la direzione
+#define IN2 22      // Pin per la direzione
+#define CW 1        // Senso orario
+#define CCW 0       // Senso antiorario
+
+// Parametri per PWM : https://randomnerdtutorials.com/esp32-pwm-arduino-ide/
+#define CHANNEL 0       // Canale per la funzione ledc
+#define FREQUENCY 5000  // Frequenza dell'onda quadra
+#define RESOLUTION 8    // Bit di risoluzione del dutycycle => livelli = 2^RESOLUTION
+int dutyCycle;
+const int maxDutyCycle = pow(2, RESOLUTION) -1;
+
+
 // Dichiarazioni
 void getAngularVelocities(float);
+void setDirection(const int);
+void setDutyCycle(int);
 
 
 // ================ SETUP ==================
 void setup() {
     
     Serial.begin(115200);
+
+    // Inizializzazione ledc channel
+    ledcSetup(CHANNEL, FREQUENCY, RESOLUTION);
+    ledcAttachPin(EN, CHANNEL);
+
+    // Inizializzazione pin del motore per la direzione
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+    setDirection(CW);
 
     // Inizializzazione dell'encoder
     if ( HALF_QUAD ) {
@@ -51,8 +77,12 @@ void loop() {
     //Serial.printf("deltaT: %.5f s\t%lu us\n", deltaT, (t-oldT));
     getAngularVelocities(deltaT);
 
+    // Mirror
+    dutyCycle = 200 + angVel_rpm;
+    setDutyCycle(dutyCycle);
+
     //Serial.printf("%f, %f, %f\n", angVel_ps, angVel_rads, angVel_rpm);
-    Serial.printf("%f\n", angVel_rpm);
+    Serial.printf("%f, %d\n", angVel_rpm, dutyCycle);
 
     delay(period);
 }
@@ -70,4 +100,38 @@ void getAngularVelocities(float deltaT) {
 
     // Azzero il contatore
     Enc.clearCount();
+}
+
+void setDirection(const int newDir) {
+    if (newDir == CW) {
+        digitalWrite(IN1, HIGH);
+        digitalWrite(IN2, LOW);
+    }
+    else if (newDir == CCW) {
+        digitalWrite(IN1, LOW);
+        digitalWrite(IN2, HIGH);
+    }
+    else {
+        perror("Direzione indicata non valida");
+        exit(1);
+    }
+}
+
+void setDutyCycle(int dt) {
+    // Accetto anche un argomento negativo: il segno indica la direzione
+    if (dt < 0) {
+        setDirection(CCW);
+        dt *= -1;
+    }
+    else {
+        setDirection(CW);
+    }
+
+    // Controllo che il valore passato sia entro i limiti
+    if (dt > maxDutyCycle) {
+        dt = maxDutyCycle;
+    }
+
+    // Imposto il dutycycle
+    ledcWrite(CHANNEL, dt);
 }
