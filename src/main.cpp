@@ -32,17 +32,17 @@ int period = 200;   // Deve essere abbastanza grande per avere abbastanza campio
 
 // Parametri per PWM : https://randomnerdtutorials.com/esp32-pwm-arduino-ide/
 #define CHANNEL 0       // Canale per la funzione ledc
-#define FREQUENCY 20000  // Frequenza dell'onda quadra
-#define RESOLUTION 8    // Bit di risoluzione del dutycycle => livelli = 2^RESOLUTION
+#define FREQUENCY 40000  // Frequenza dell'onda quadra
+#define RESOLUTION 10    // Bit di risoluzione del dutycycle => livelli = 2^RESOLUTION
 int dutyCycle = 0;
 int dutyCycle_print;
 const int maxDutyCycle = pow(2, RESOLUTION) -1;
 
 // Parametri del PID
 const float kp = 0.05;
-const float ki = 1;
+const float ki = 10;
 const float kd = 0;
-float target = 12;    // Velocità angolare da raggiungere e mantenere [rpm]
+float target = 24;    // Velocità angolare da raggiungere e mantenere [rpm]
 float error = 0;
 float errorP, errorI, errorD;   // Termini per gestire le varie componenti del PID
 
