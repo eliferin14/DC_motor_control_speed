@@ -2,6 +2,8 @@
 #include <ESP32Encoder.h>
 
 #define RADS2RPM 9.5492965964254
+#define GIRARROSTO2ENCODER 31.25    // 500 / 16
+#define RPM_GIRARROSTO 1
 
 // Encoder
 #define ENCA 18     // Pin A dell'encoder
@@ -42,7 +44,8 @@ const int maxDutyCycle = pow(2, RESOLUTION) -1;
 const float kp = 0.01;
 const float ki = 0.01;
 const float kd = 0;
-float target = 24;    // Velocità angolare da raggiungere e mantenere [rpm]
+volatile float target = RPM_GIRARROSTO * GIRARROSTO2ENCODER;    // Velocità angolare da raggiungere e mantenere [rpm]
+volatile float memTarget = 0, tempTarget;    // Variabili per accendere/spegnere la rotazione
 float error = 0;
 float errorP, errorI, errorD;   // Termini per gestire le varie componenti del PID
 
@@ -52,12 +55,14 @@ float angVel_filt;
 float oldVel[N] = {0};
 
 // Secondo encoder, gestito con interrupt
-#define ENC2A 26
-#define ENC2B 27
-#define ENC2SWITCH 25
-void IRAM_ATTR changeTarget();
-void IRAM_ATTR startStop();
-volatile bool rotate = false;   // indica se il motore deve girare 
+#define ENC2A 27
+#define ENC2B 26
+#define ENC2SWITCH 25           // Quando premo sulla manopola
+void IRAM_ATTR changeTarget();  // Modifica la velocità target
+volatile bool aState, bState;   // Variabili per determinare la direzione
+void IRAM_ATTR startStop();     // Accende/spegne la rotazione
+volatile bool rotate = true;    // indica se il motore deve girare 
+volatile unsigned long interruptT = 0;  // Timer per gli interrupt
 
 
 // Dichiarazioni
@@ -71,6 +76,15 @@ void lowPassFilter(float);
 void setup() {
     
     Serial.begin(115200);
+
+    // Inizializzazione Encoder di controllo
+    pinMode(ENC2A, INPUT);
+    pinMode(ENC2B, INPUT);
+    pinMode(ENC2SWITCH, INPUT);
+    attachInterrupt(ENC2A, changeTarget, CHANGE);
+    attachInterrupt(ENC2SWITCH, startStop, FALLING);
+    aState = digitalRead(ENC2A);
+    bState = digitalRead(ENC2B);
 
     // Inizializzazione ledc channel
     ledcSetup(CHANNEL, FREQUENCY, RESOLUTION);
@@ -92,6 +106,12 @@ void setup() {
 
 // ================ LOOP ===================
 void loop() {
+
+    // Se non c'è il segnale di partenza
+    if (!rotate) {
+        Serial.printf("#Resting\n");
+        return;
+    }
 
     // Calcolo l'intervallo di campionamento
     oldT = t;
@@ -127,7 +147,7 @@ void loop() {
 
     //Serial.printf("%f, %f, %f\n", angVel_ps, angVel_rads, angVel_rpm);
     dutyCycle_print = map(dutyCycle, -maxDutyCycle, maxDutyCycle, -target, target);
-    Serial.printf("%.2f, %.2f\n", target, angVel_filt);
+    Serial.printf("%.2f, %.2f, %.2f\n", target, angVel_rpm, angVel_filt);
 
     delay(period);
 }
@@ -201,12 +221,34 @@ void lowPassFilter(float newVel) {
     float sum = 0;
     int count = N;
     for( int i=0; i<N; i++) {
-        if (oldVel[i] != 0) {
-            sum += oldVel[i];
-        }
-        else {
-            count--;
-        }
+        sum += oldVel[i];
     }
     angVel_filt = count? sum/count : 0;
+    oldVel[0] = angVel_filt;
+}
+
+void IRAM_ATTR startStop() {
+    if( millis() - interruptT > 500) {
+        //rotate = !rotate;
+        tempTarget = target;
+        target = memTarget;
+        memTarget = tempTarget;
+        //setDutyCycle(0);
+        interruptT = millis();
+    }
+}
+
+void IRAM_ATTR changeTarget() {
+    if ( millis() - interruptT < 50 ) return;
+
+    aState = digitalRead(ENC2A);
+    bState = digitalRead(ENC2B);
+    if ( aState == bState ) {
+        target *= 0.95;
+    }
+    else {
+        target *= 1.05;
+    }
+
+    interruptT = millis();
 }
