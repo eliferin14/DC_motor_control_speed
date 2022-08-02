@@ -24,33 +24,47 @@ float deltaT;
 int period = 200;   // Deve essere abbastanza grande per avere abbastanza campioni
 
 // Motore con driver L298n
-#define EN 21       // Pin su cui mandare il segnale pwm
-#define IN1 23      // Pin per la direzione
-#define IN2 22      // Pin per la direzione
+#define EN 13       // Pin su cui mandare il segnale pwm
+#define IN1 12      // Pin per la direzione
+#define IN2 14      // Pin per la direzione
 #define CW 1        // Senso orario
 #define CCW 0       // Senso antiorario
 
 // Parametri per PWM : https://randomnerdtutorials.com/esp32-pwm-arduino-ide/
 #define CHANNEL 0       // Canale per la funzione ledc
-#define FREQUENCY 40000  // Frequenza dell'onda quadra
-#define RESOLUTION 10    // Bit di risoluzione del dutycycle => livelli = 2^RESOLUTION
+#define FREQUENCY 20000  // Frequenza dell'onda quadra
+#define RESOLUTION 11    // Bit di risoluzione del dutycycle => livelli = 2^RESOLUTION
 int dutyCycle = 0;
 int dutyCycle_print;
 const int maxDutyCycle = pow(2, RESOLUTION) -1;
 
-// Parametri del PID
-const float kp = 0.05;
-const float ki = 10;
+// Parametri del PID: funziona QB con 0.01 e 0.01
+const float kp = 0.01;
+const float ki = 0.01;
 const float kd = 0;
 float target = 24;    // Velocità angolare da raggiungere e mantenere [rpm]
 float error = 0;
 float errorP, errorI, errorD;   // Termini per gestire le varie componenti del PID
+
+// Low-Pass filter
+float angVel_filt;
+#define N 4
+float oldVel[N] = {0};
+
+// Secondo encoder, gestito con interrupt
+#define ENC2A 26
+#define ENC2B 27
+#define ENC2SWITCH 25
+void IRAM_ATTR changeTarget();
+void IRAM_ATTR startStop();
+volatile bool rotate = false;   // indica se il motore deve girare 
 
 
 // Dichiarazioni
 void getAngularVelocities(float);
 void setDirection(const int);
 void setDutyCycle(int);
+void lowPassFilter(float);
 
 
 // ================ SETUP ==================
@@ -90,9 +104,11 @@ void loop() {
     // Misuro la velocità
     getAngularVelocities(deltaT);
 
-    // Calcolo l'errore
-    error = target - angVel_rpm;
+    // Filtro
+    lowPassFilter(angVel_rpm);
 
+    // Calcolo l'errore
+    error = target - angVel_filt;
     // Calcolo il dutyCycle usando i parametri del PID
     // NB: Ignoro il termine integrale
 
@@ -103,7 +119,7 @@ void loop() {
         errorI += error * deltaT;
 
         // Sommo le componenti 
-        dutyCycle = kp*errorP + ki*errorI + kd*errorD;
+        dutyCycle = (kp*errorP + ki*errorI + kd*errorD) * maxDutyCycle;
 
 
     // Imposto il dutycycle
@@ -111,7 +127,7 @@ void loop() {
 
     //Serial.printf("%f, %f, %f\n", angVel_ps, angVel_rads, angVel_rpm);
     dutyCycle_print = map(dutyCycle, -maxDutyCycle, maxDutyCycle, -target, target);
-    Serial.printf("%f, %.2f, %.2f, %d\n", target, angVel_rpm, error, dutyCycle_print);
+    Serial.printf("%.2f, %.2f\n", target, angVel_filt);
 
     delay(period);
 }
@@ -163,4 +179,34 @@ void setDutyCycle(int dt) {
 
     // Imposto il dutycycle
     ledcWrite(CHANNEL, dt);
+}
+
+void lowPassFilter(float newVel) {
+    // Inserisco il nuovo valore nell'array
+    for( int i=N-1; i>0; i--) {
+        //printf("%.2f ---> ", oldVel[i]);
+        oldVel[i] = oldVel[i-1];
+        //printf("%.2f\n", oldVel[i]);
+    }
+    oldVel[0] = newVel;
+
+    /*
+    for(int i=0; i<N; i++) {
+        Serial.printf("%.2f ", oldVel[i]);
+    }
+    Serial.printf("\n");
+    */
+
+    // Calcolo il valore filtrato
+    float sum = 0;
+    int count = N;
+    for( int i=0; i<N; i++) {
+        if (oldVel[i] != 0) {
+            sum += oldVel[i];
+        }
+        else {
+            count--;
+        }
+    }
+    angVel_filt = count? sum/count : 0;
 }
