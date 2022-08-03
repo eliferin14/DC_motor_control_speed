@@ -2,7 +2,7 @@
 #include <ESP32Encoder.h>
 
 #define RADS2RPM 9.5492965964254
-#define GIRARROSTO2ENCODER 31.25    // 500 / 16
+#define GIRARROSTO2ENCODER 19.37    // 500 / 16
 #define RPM_GIRARROSTO 1
 
 // Encoder
@@ -39,19 +39,21 @@ int period = 200;   // Deve essere abbastanza grande per avere abbastanza campio
 int dutyCycle = 0;
 int dutyCycle_print;
 const int maxDutyCycle = pow(2, RESOLUTION) -1;
+const int pwmSat_low = 1000;
+const int pwmSat_high = 1700;   // A vuoto consuma 1.25A, meglio non andare più su
 
 // Parametri del PID: funziona QB con 0.01 e 0.01
 const float kp = 0.01;
 const float ki = 0.01;
 const float kd = 0;
-volatile float target = RPM_GIRARROSTO * GIRARROSTO2ENCODER;    // Velocità angolare da raggiungere e mantenere [rpm]
-volatile float memTarget = 0, tempTarget;    // Variabili per accendere/spegnere la rotazione
+volatile float target = 0;    // Velocità angolare da raggiungere e mantenere [rpm]
+volatile float memTarget = RPM_GIRARROSTO * GIRARROSTO2ENCODER, tempTarget;    // Variabili per accendere/spegnere la rotazione
 float error = 0;
 float errorP, errorI, errorD;   // Termini per gestire le varie componenti del PID
 
 // Low-Pass filter
 float angVel_filt;
-#define N 4
+#define N 3
 float oldVel[N] = {0};
 
 // Secondo encoder, gestito con interrupt
@@ -136,18 +138,22 @@ void loop() {
         errorP = error;
 
         // Termine integrale: valore*deltaT
-        errorI += error * deltaT;
+        if ( dutyCycle < pwmSat_high ) {    // Anti wind-up
+            errorI += error * deltaT;
+        }
 
         // Sommo le componenti 
         dutyCycle = (kp*errorP + ki*errorI + kd*errorD) * maxDutyCycle;
 
 
     // Imposto il dutycycle
+    if (dutyCycle > pwmSat_high) dutyCycle = pwmSat_high;
+    if (dutyCycle < pwmSat_low) dutyCycle = pwmSat_low;
     setDutyCycle(dutyCycle);
 
     //Serial.printf("%f, %f, %f\n", angVel_ps, angVel_rads, angVel_rpm);
-    dutyCycle_print = map(dutyCycle, -maxDutyCycle, maxDutyCycle, -target, target);
-    Serial.printf("%.2f, %.2f, %.2f\n", target, angVel_rpm, angVel_filt);
+    dutyCycle_print = dutyCycle / maxDutyCycle * 100;;
+    Serial.printf("%.2f, %.2f, %.2f, %d\n", target, angVel_rpm, angVel_filt, dutyCycle);
 
     delay(period);
 }
@@ -191,11 +197,8 @@ void setDutyCycle(int dt) {
     else {
         setDirection(CW);
     }
-
-    // Controllo che il valore passato sia entro i limiti
-    if (dt > maxDutyCycle) {
-        dt = maxDutyCycle;
-    }
+    
+    // Il controllo che sia entro i limiti viene fatto fuori
 
     // Imposto il dutycycle
     ledcWrite(CHANNEL, dt);
@@ -244,11 +247,13 @@ void IRAM_ATTR changeTarget() {
     aState = digitalRead(ENC2A);
     bState = digitalRead(ENC2B);
     if ( aState == bState ) {
-        target *= 0.95;
+        target *= 0.7;
     }
     else {
-        target *= 1.05;
+        target *= 1.4;
     }
+
+    if ( target > 120 ) target = 120;
 
     interruptT = millis();
 }
