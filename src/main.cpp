@@ -155,8 +155,8 @@ void loop() {
     // Imposto il dutycycle
     if (dutyCycle > pwmSat_high) dutyCycle = pwmSat_high;
     if (dutyCycle < pwmSat_low) dutyCycle = pwmSat_low;
-    //setDutyCycle(dutyCycle);
-    setDutyCycle( 1400 );
+    setDutyCycle(dutyCycle);
+    //setDutyCycle( 1400 );
 
     //Serial.printf("%f, %f, %f\n", angVel_ps, angVel_rads, angVel_rpm);
     dutyCycle_print = dutyCycle / maxDutyCycle * 100;;
