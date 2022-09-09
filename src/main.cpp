@@ -40,7 +40,7 @@ int dutyCycle = 0;
 int dutyCycle_print;
 const int maxDutyCycle = pow(2, RESOLUTION) -1;
 const int pwmSat_low = 1000;
-const int pwmSat_high = 1700;   // A vuoto consuma 1.25A, meglio non andare più su
+const int pwmSat_high = maxDutyCycle;   // A vuoto consuma 1.25A, meglio non andare più su
 
 // Parametri del PID: funziona QB con 0.01 e 0.01
 const float kp = 0.01;
@@ -60,6 +60,8 @@ float oldVel[N] = {0};
 #define ENC2A 27
 #define ENC2B 26
 #define ENC2SWITCH 25           // Quando premo sulla manopola
+#define KNOB_PULSES_PER_ROUTE 30    // Numero di impulsi per giro
+ESP32Encoder knob;              // Oggetto per gestire la manopola
 void IRAM_ATTR changeTarget();  // Modifica la velocità target
 volatile bool aState, bState;   // Variabili per determinare la direzione
 void IRAM_ATTR startStop();     // Accende/spegne la rotazione
@@ -72,6 +74,7 @@ void getAngularVelocities(float);
 void setDirection(const int);
 void setDutyCycle(int);
 void lowPassFilter(float);
+void changeSpeed();
 
 
 // ================ SETUP ==================
@@ -83,7 +86,7 @@ void setup() {
     pinMode(ENC2A, INPUT);
     pinMode(ENC2B, INPUT);
     pinMode(ENC2SWITCH, INPUT);
-    attachInterrupt(ENC2A, changeTarget, CHANGE);
+    //attachInterrupt(ENC2A, changeTarget, CHANGE);
     attachInterrupt(ENC2SWITCH, startStop, FALLING);
     aState = digitalRead(ENC2A);
     bState = digitalRead(ENC2B);
@@ -104,6 +107,9 @@ void setup() {
     else {
         Enc.attachFullQuad(ENCA, ENCB);
     }
+
+    // Inizializzazione della manopola
+    knob.attachHalfQuad(ENC2A, ENC2B);
 }
 
 // ================ LOOP ===================
@@ -149,14 +155,18 @@ void loop() {
     // Imposto il dutycycle
     if (dutyCycle > pwmSat_high) dutyCycle = pwmSat_high;
     if (dutyCycle < pwmSat_low) dutyCycle = pwmSat_low;
-    setDutyCycle(dutyCycle);
+    //setDutyCycle(dutyCycle);
+    setDutyCycle( 1400 );
 
     //Serial.printf("%f, %f, %f\n", angVel_ps, angVel_rads, angVel_rpm);
     dutyCycle_print = dutyCycle / maxDutyCycle * 100;;
-    Serial.printf("%.2f, %.2f, %.2f, %d\n", target, angVel_rpm, angVel_filt, dutyCycle);
+    Serial.printf("%.2f, %.2f, %.2f\n", target, angVel_rpm, angVel_filt);
+    //Serial.printf("%.2f\n", error);
+
+    changeSpeed();
 
     delay(period);
-}
+} 
 
 void getAngularVelocities(float deltaT) {
     
@@ -232,7 +242,8 @@ void lowPassFilter(float newVel) {
 
 void IRAM_ATTR startStop() {
     if( millis() - interruptT > 500) {
-        //rotate = !rotate;
+        rotate = !rotate;
+        setDutyCycle(0);
         tempTarget = target;
         target = memTarget;
         memTarget = tempTarget;
@@ -242,7 +253,7 @@ void IRAM_ATTR startStop() {
 }
 
 void IRAM_ATTR changeTarget() {
-    if ( millis() - interruptT < 50 ) return;
+    if ( millis() - interruptT < 100 ) return;
 
     aState = digitalRead(ENC2A);
     bState = digitalRead(ENC2B);
@@ -256,4 +267,20 @@ void IRAM_ATTR changeTarget() {
     if ( target > 120 ) target = 120;
 
     interruptT = millis();
+}
+
+void changeSpeed() {
+    // Conto gli impulsi
+    int knobPulses = knob.getCount();
+    if (knobPulses==0) return;
+    //Serial.printf("%d\n", knobPulses);
+
+    // Modifico la velocità target
+    float multiplier = pow(0.9, knobPulses);
+    target *= multiplier;
+
+    if (target>120) target = 120;
+
+    // Azzero il contatore
+    knob.clearCount();
 }
