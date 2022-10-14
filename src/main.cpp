@@ -2,8 +2,20 @@
 #include <ESP32Encoder.h>
 
 #define RADS2RPM 9.5492965964254
-#define GIRARROSTO2ENCODER 19.37    // 500 / 16
 #define RPM_GIRARROSTO 1
+
+// Riduzione
+//#define GIRARROSTO2ENCODER 19.37    // Girarrosto v1.0 - 500 / 16
+
+/*
+    Girarrosto v2.0
+    - MotorGear: 75 denti
+    - EncoderGear: 15 denti
+    - WormWheel: 20 denti
+
+    Riduzione = 75/15 * 20 = 100
+*/
+#define GIRARROSTO2ENCODER 100    // Girarrosto v2.0 - 
 
 // Encoder
 #define ENCA 18     // Pin A dell'encoder
@@ -27,7 +39,7 @@ int period = 200;   // Deve essere abbastanza grande per avere abbastanza campio
 
 // Motore con driver L298n
 #define EN 13       // Pin su cui mandare il segnale pwm
-#define IN1 12      // Pin per la direzione
+#define IN1 12      // Pin per la direzione 
 #define IN2 14      // Pin per la direzione
 #define CW 1        // Senso orario
 #define CCW 0       // Senso antiorario
@@ -86,6 +98,7 @@ void setup() {
     pinMode(ENC2A, INPUT);
     pinMode(ENC2B, INPUT);
     pinMode(ENC2SWITCH, INPUT);
+    Serial.printf("# Controller: CLK: %d, DT: %d, SW: %d\n", ENC2A, ENC2B, ENC2SWITCH);
     //attachInterrupt(ENC2A, changeTarget, CHANGE);
     attachInterrupt(ENC2SWITCH, startStop, FALLING);
     aState = digitalRead(ENC2A);
@@ -94,11 +107,13 @@ void setup() {
     // Inizializzazione ledc channel
     ledcSetup(CHANNEL, FREQUENCY, RESOLUTION);
     ledcAttachPin(EN, CHANNEL);
+    Serial.printf("# PWM motor signal: EN: %d\n", EN);
 
     // Inizializzazione pin del motore per la direzione
     pinMode(IN1, OUTPUT);
     pinMode(IN2, OUTPUT);
     setDirection(CW);
+    Serial.printf("# Motor direction pins: IN3: %d, IN4: %d\n", IN1, IN2);
 
     // Inizializzazione dell'encoder
     if ( HALF_QUAD ) {
@@ -107,6 +122,7 @@ void setup() {
     else {
         Enc.attachFullQuad(ENCA, ENCB);
     }
+    Serial.printf("# Encoder: pinA: %d, pinB: %d", ENCA, ENCB);
 
     // Inizializzazione della manopola
     knob.attachHalfQuad(ENC2A, ENC2B);
